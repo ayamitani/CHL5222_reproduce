@@ -1,0 +1,323 @@
+---
+title: "Reproducing correlated data analyses from peer-reviewed studies"
+author: "CHL5222 Analysis of Correlated Data (Winter 2024)"
+date: "2024-02-05"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    theme: yeti
+    highlight: haddock
+---
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+div.yellow { background-color:#fffde6; border-radius: 5px; padding: 20px;}
+div.green { background-color:#e6fff0; border-radius: 5px; padding: 20px;}
+div.orange { background-color:#ffede6; border-radius: 5px; padding: 20px;}
+div.purple { background-color:#f5e6ff; border-radius: 5px; padding: 20px;}
+div.aqua { background-color:#e6fdff; border-radius: 5px; padding: 20px;}
+</style>
+
+
+```{r setup, include=FALSE}
+library(here)
+library(tidyverse)
+library(tinytex)
+library(knitr)
+library(kableExtra)
+library(nlme)
+library(lme4)
+library(lubridate)
+library(texreg)
+library(AICcmodavg)
+knitr::opts_knit$set(root.dir = here())
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+theme_set(theme_bw(base_size = 15)) # Use black/white theme and increase font size for all ggplot figures
+```
+
+
+We will try to reproduce part of the analyses conducted in ["Social distancing to slow the US COVID-19 epidemic: Longitudinal pretest–post test comparison group study" by Siedner et al](https://doi.org/10.1371/journal.pmed.1003244), which was published in PLOS Medicine in August 2020. 
+
+
+<br><br><br>
+
+
+# Paper summary
+
+<br><br>
+
+## Abtract
+
+### Background
+Social distancing measures to address the US coronavirus disease 2019 (COVID-19) epidemic
+may have notable health and social impacts.
+
+### Methods and findings
+We conducted a longitudinal pretest–post test comparison group study to estimate the change in COVID-19 case growth before versus after implementation of statewide social distancing measures in the US. The primary exposure was time before (14 days prior to,
+and through 3 days after) versus after (beginning 4 days after, to up to 21 days after) implementation of the first statewide social distancing measures. Statewide restrictions on internal movement were examined as a secondary exposure. The primary outcome was the
+COVID-19 case growth rate. The secondary outcome was the COVID-19-attributed mortality growth rate. All states initiated social distancing measures between March 10 and March 25, 2020. The mean daily COVID-19 case growth rate decreased beginning 4 days after
+implementation of the first statewide social distancing measures, by 0.9% per day (95% CI −1.4% to −0.4%; P < 0.001). We did not observe a statistically significant difference in the mean daily case growth rate before versus after implementation of statewide restrictions on internal movement (0.1% per day; 95% CI −0.04% to 0.3%; P = 0.14), but there is substantial difficulty in disentangling the unique associations with statewide restrictions on internal movement from the unique associations with the first social distancing measures. Beginning 7 days after social distancing, the COVID-19-attributed mortality growth rate decreased by 2.0% per day (95% CI −3.0% to −0.9%; P < 0.001). Our analysis is susceptible to potential bias resulting from the aggregate nature of the ecological data, potential confounding by contemporaneous changes (e.g., increases in testing), and potential underestimation of social distancing due to spillover effects from neighboring states.
+
+### Conclusions
+Statewide social distancing measures were associated with a decrease in the COVID-19 case growth rate that was statistically significant. Statewide social distancing measures were also associated with a decrease in the COVID-19-attributed mortality growth rate
+beginning 7 days after implementation, although this decrease was no longer statistically significant by 10 days.
+
+
+<br><br>
+
+## Data availability statement
+The data on social distancing policies are contained within the Supplementary Appendix (Table A in S1 Text). The data on COVID-19 cases and deaths are publicly available from <https://github.com/nytimes/covid-19-data>.
+
+- Can you find these data? 
+- Are the data in a usable format?
+- What variable would you use to link the two data sets?
+
+
+
+# Data preparation
+
+To make this exercise a little bit easier, I converted the two data sets into CSV files. The data set on social distancing policies looks like this:
+
+```{r, echo = FALSE}
+dates <- read.csv(here("data", "state-physdist-dates-clean.csv"), header = TRUE)
+head(dates)
+```
+
+
+and the data set on COVID-19 cases and deaths looks like this:
+```{r, echo = FALSE}
+cases <- read.csv(here("data", "us-states-clean.csv"), header = TRUE)
+head(cases)
+```
+
+We will focus on the primary outcome -- COVID-19 case growth rate -- and recreate results presented in the left column of Table 1 (growth in mean daily COVID-19 cases before versus after implementation of the first statewide social distancing measure) and Figure 1A. 
+
+
+<br><br><br>
+
+# Preliminary questions
+
+- What was the research question?
+  + Page 3, paragraph 1: "Our primary aim was to empirically estimate the public health impact of government-mandated non-pharmacological interventions in the period after their initial implementation and prior to their recent staged relaxation."
+- How was the primary outcome defined?
+  + Page 3, paragraph 3: "Our primary outcome was the rate of change in daily COVID-19 cases in each state, calculated
+as the natural log of cases on each date minus the natural log of cases on the prior date."
+- How was the primary exposure defined?
+  + Page 3, paragraph 3: "The primary exposure of interest was time, measured as a continuous variable and divided into 2 periods: pre-implementation (14 days prior to, and through 3 days after, implementation of the first statewide social distancing measure) versus post-implementation (4 days after, to up to 21 days after implementation)."
+- Write down the model equation used for the primary analysis
+  + $Y_{ij} = \beta_1 + \beta_2\text{Time}_{ij} + \beta_3\text{Post-intervention}_{ij} + \beta_4\text{Time}_{ij} \times \text{Post-intervention}_{ij} + b_{i} + \epsilon_{ij}$, where $Y_{ij}$ is the rate of change in COVID-19 cases on day $j$ in state $i$, $b_{i}$ is the state level random intercept, and $\text{Post-intervention}_{ij} = 0$ if before implementation period and $\text{Post-intervention}_{ij} = 1$ if after.
+- What was the date range used for the primary analysis?
+  + Page 3, paragraph 3: "Analysis was restricted to days on which a state had at least 30 cumulative cases reported"
+  + Page 4, paragraph 3: "In response to editorial and reviewer feedback, we further updated the dataset and extended the study period to include social distancing measures implemented up to May 1 and COVID-19 cases and deaths up to May 26"
+
+
+<br><br><br>
+
+# Setting up data for analysis
+
+<br><br>
+
+## Prepare physical distancing data
+
+First, read in the physical distancing data.
+```{r}
+dates <- read.csv(here("data", "state-physdist-dates-clean.csv"), header = TRUE)
+```
+
+Then, find out the date in which the first statewide distancing measure took place for each state. Create a new data set **`first_dates`** by selecting the earliest `date_imp` for each state. Call this date `first_date`. Keep the variables `state`, `school`, `workplace`, `publicevent`, `lockdown`, `stateborder`, and `first_date`. 
+```{r}
+# first dates of statewide distancing
+first_dates <- dates %>%
+  group_by(state) %>%
+  mutate(first_date = min(date_imp)) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(state, school, workplace, publicevent, lockdown, stateborder, first_date)
+```
+
+Now find out the date in which the first lockdown measure took place for each state. Create a new data set **`lockdown_dates`** by selecting the earliest `date_imp` when `lockdown == 1` for each state. Call this date `lockdown_date`. Keep the variables `state` and `lockdown_date`. 
+```{r}
+# dates of lockdown
+lockdown_dates <- dates %>% 
+  dplyr::filter(lockdown == 1) %>%
+  group_by(state) %>%
+  mutate(lockdown_date = min(date_imp)) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(state, lockdown_date)
+```
+
+Merge **`first_dates`** and **`lockdown_dates`** to create one data set with first dates of statewide distancing and dates of lockdown. Call this new data set **`imp_dates`**. 
+```{r}
+imp_dates <- left_join(first_dates, lockdown_dates, by = "state")
+```
+
+
+<br><br>
+
+## Prepare cases data
+
+Now, read in the cases data.
+```{r}
+cases <- read.csv(here("data", "us-states-clean.csv"), header = TRUE)
+head(cases)
+```
+Then, 
+
+1. Retain dates up to May 26, 2020 by `dplyr::filter(ymd(date) <= "2020-05-26")`
+2. Use `cumsum()` function to create `cum_cases` (cumulative cases) for each state
+2. Use `dplyr::lag()` function to create `prev_cases` (previous cases) for each state
+3. Create `change_cases` by subtracting the log of `prev_cases` from the log of `cases`
+4. Create `pct_change_cases` by multiplying `change_cases` by 100
+5. Merge **`imp_dates`** by the common variable `state`
+6. Create `days_from_first` which is the difference between `as_date(date)` and `as_date(first_date)`
+7. Create `days_from_lockdown` which is the difference between `as_date(date)` and `as_date(lockdown_date)`
+8. Call this new data **`finaldata`**
+
+Note that we haven't "restricted to days on which a state had at least 30 cumulative cases reported" yet. We will do this after -- the reason will become clear later.
+```{r}
+finaldata <- cases %>%
+  group_by(state) %>%
+  # last day to 2020-05-26
+  dplyr::filter(ymd(date) <= "2020-05-26") %>%
+  mutate(cum_cases = cumsum(cases),
+         log_cases = log(cases),
+         prev_cases = dplyr::lag(cases),
+         log_prev_cases = log(prev_cases),
+         change_cases = log_cases - log_prev_cases,
+         pct_change_cases = change_cases * 100) %>%
+  # merge imp_dates
+  inner_join(imp_dates, by = "state") %>%
+  mutate(days_from_first = as_date(date) - as_date(first_date),
+         days_from_lockdown = as_date(date) - as_date(lockdown_date)) %>%
+  ungroup()
+```
+
+
+<br><br><br>
+
+
+# In-class exercise
+
+## Quality checks
+
+Let's do some quality checks using the data set `finaldata`. 
+
+1. The paper states that "The most widely enacted measures on the first date of implementation were cancellations of public events (34/51 [67%]) and closures of schools (26/51 [51%])." Is this true?
+
+```{r}
+# code code code...
+```
+
+
+
+2. What about this statement: "As of May 1, nearly all (45 [90%]) states had implemented statewide restrictions on internal movement." Is this true?
+
+```{r}
+# code code code...
+```
+
+3. Check if this statement is true: These restrictions on internal movement were implemented a median of 11 days (IQR 8–15) after the first statewide social distancing measure was implemented in the respective states,..."
+
+```{r}
+# code code code...
+```
+
+
+
+
+4. The paper states "The first social distancing measures were implemented when the median statewide epidemic size was 35 cases (interquartile range [IQR] 17–72)". Is this true?
+
+```{r}
+# code code code...
+```
+
+5. And "These restrictions on internal movement were implemented ... when the median statewide epidemic size was 937 cases (IQR 225–1,414)."
+
+```{r}
+# code code code...
+```
+
+
+<br><br><br>
+
+# Modelling change in cases
+
+Work with your classmates to fit the linear mixed effects model:
+$Y_{ij} = \beta_1 + \beta_2\text{Time}_{ij} + \beta_3\text{Post-intervention}_{ij} + \beta_4\text{Time}_{ij} \times \text{Post-intervention}_{ij} + b_{i} + \epsilon_{ij}$, where $Y_{ij}$ is the rate of change in COVID-19 cases on day $j$ in state $i$, $b_{i}$ is the state level random intercept, and $\text{Post-intervention}_{ij} = 0$ if before implementation period and $\text{Post-intervention}_{ij} = 1$ if after.
+
+Then, recreate Figure 1A by using the `predictSE()` function to obtain the predictive margins.
+
+* Before you fit the model, note that "Analysis was restricted to days on which a state had at least 30 cumulative cases reported, to minimize any effects of volatile rate changes early in the epidemic." and "The primary exposure of interest was time, measured as a continuous variable and divided into 2 periods: pre-implementation (14 days prior to, and through 3 days after, implementation of the first statewide social distancing measure) versus post-implementation (4 days after, to up to 21 days after implementation)."
+
+So, 
+
+1. Create **`modeldata`** from **`finaldata`** restricting days on which each state had at least 30 cumulative cases reported
+2. Create a new variable `imp_period` where `imp_period = 0` if -14 $\leq$ `date_from_first` $<$ 4 and `imp_period = 1` if 4 $\leq$ `date_from_first` $\leq$ 21
+3. Remove dates outside the `imp_period` window
+
+```{r}
+# code code code...
+```
+
+<br><br>
+
+## Fit linear mixed effects model to recreate Table 1
+
+Use either `lme` or `lme4` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
+
+```{r}
+# code code code...
+```
+
+Are your results close to the results shown in Table 1?
+
+What went wrong...
+
+Instead of restricting data with `cum_cases >= 30`, try restricting it with `cases >= 30`.
+
+```{r}
+# code code code...
+```
+
+<br><br>
+
+## Re-fit linear mixed effects model to recreate Table 1
+
+Use either `lme` or `lme4` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
+
+```{r}
+# code code code...
+```
+Now are your results close to the results in Table 1?
+
+<br><br>
+
+## Recreate Figure 1A
+
+<br>
+
+### Observed change in cases against days since first social distancing measure
+
+Pay attention to:
+
++ Data used to plot the **Observed** percent change in case counts
++ Range of y-axis and x-axis
++ Model used to estimated the **predicted** mean change in cases and the 95% confidence interval band
+
+```{r}
+# code code code...
+```
+
+<br><br><br>
+
+# Discussion
+
+- Let's go over the model interpretation given in the paper.
+- What did you think about this exercise?
+- Did your understanding about the paper change after trying to reproduce the analysis?
+- What would you change if you were to answer the same research question using this data?
+- Do you feel confident reproducing other parts of the analysis in the paper?
+- How would you edit/change the paper to make reproduction more accessible?

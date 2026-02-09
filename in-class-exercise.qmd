@@ -1,25 +1,9 @@
 ---
 title: "Reproducing correlated data analyses from peer-reviewed studies"
-author: "CHL5222 Analysis of Correlated Data (Winter 2023)"
-date: "2023-02-13"
-output: 
-  html_document:
-    toc: yes
-    toc_depth: 4
-    toc_float: yes
-    theme: yeti
-    highlight: haddock
+author: "CHL5222 Analysis of Correlated Data"
+format: pdf
+editor: source
 ---
-
-<style>
-div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
-div.yellow { background-color:#fffde6; border-radius: 5px; padding: 20px;}
-div.green { background-color:#e6fff0; border-radius: 5px; padding: 20px;}
-div.orange { background-color:#ffede6; border-radius: 5px; padding: 20px;}
-div.purple { background-color:#f5e6ff; border-radius: 5px; padding: 20px;}
-div.aqua { background-color:#e6fdff; border-radius: 5px; padding: 20px;}
-</style>
-
 
 ```{r setup, include=FALSE}
 library(here)
@@ -28,7 +12,6 @@ library(tinytex)
 library(knitr)
 library(kableExtra)
 library(nlme)
-library(lme4)
 library(lubridate)
 library(texreg)
 library(AICcmodavg)
@@ -81,14 +64,14 @@ The data on social distancing policies are contained within the Supplementary Ap
 To make this exercise a little bit easier, I converted the two data sets into CSV files. The data set on social distancing policies looks like this:
 
 ```{r, echo = FALSE}
-dates <- read.csv(here("data", "state-physdist-dates-clean.csv"), header = TRUE)
+dates <- read.csv("data/state-physdist-dates-clean.csv", header = TRUE)
 head(dates)
 ```
 
 
 and the data set on COVID-19 cases and deaths looks like this:
 ```{r, echo = FALSE}
-cases <- read.csv(here("data", "us-states-clean.csv"), header = TRUE)
+cases <- read.csv("data/us-states-clean.csv", header = TRUE)
 head(cases)
 ```
 
@@ -123,7 +106,7 @@ as the natural log of cases on each date minus the natural log of cases on the p
 
 First, read in the physical distancing data.
 ```{r}
-dates <- read.csv(here("data", "state-physdist-dates-clean.csv"), header = TRUE)
+dates <- read.csv("data/state-physdist-dates-clean.csv", header = TRUE)
 ```
 
 Then, find out the date in which the first statewide distancing measure took place for each state. Create a new data set **`first_dates`** by selecting the earliest `date_imp` for each state. Call this date `first_date`. Keep the variables `state`, `school`, `workplace`, `publicevent`, `lockdown`, `stateborder`, and `first_date`. 
@@ -161,13 +144,12 @@ imp_dates <- left_join(first_dates, lockdown_dates, by = "state")
 
 Now, read in the cases data.
 ```{r}
-cases <- read.csv(here("data", "us-states-clean.csv"), header = TRUE)
+cases <- read.csv("data/us-states-clean.csv", header = TRUE)
 head(cases)
 ```
 Then, 
 
 1. Retain dates up to May 26, 2020 by `dplyr::filter(ymd(date) <= "2020-05-26")`
-2. Use `cumsum()` function to create `cum_cases` (cumulative cases) for each state
 2. Use `dplyr::lag()` function to create `prev_cases` (previous cases) for each state
 3. Create `change_cases` by subtracting the log of `prev_cases` from the log of `cases`
 4. Create `pct_change_cases` by multiplying `change_cases` by 100
@@ -176,23 +158,11 @@ Then,
 7. Create `days_from_lockdown` which is the difference between `as_date(date)` and `as_date(lockdown_date)`
 8. Call this new data **`finaldata`**
 
-Note that we haven't "restricted to days on which a state had at least 30 cumulative cases reported" yet. We will do this after -- the reason will become clear later.
+Note that we haven't "restricted to days on which a state had at least 30 cumulative cases reported" yet. We will do this after checking the descriptives.
 ```{r}
 finaldata <- cases %>%
   group_by(state) %>%
-  # last day to 2020-05-26
-  dplyr::filter(ymd(date) <= "2020-05-26") %>%
-  mutate(cum_cases = cumsum(cases),
-         log_cases = log(cases),
-         prev_cases = dplyr::lag(cases),
-         log_prev_cases = log(prev_cases),
-         change_cases = log_cases - log_prev_cases,
-         pct_change_cases = change_cases * 100) %>%
-  # merge imp_dates
-  inner_join(imp_dates, by = "state") %>%
-  mutate(days_from_first = as_date(date) - as_date(first_date),
-         days_from_lockdown = as_date(date) - as_date(lockdown_date)) %>%
-  ungroup()
+  # add code
 ```
 
 
@@ -266,7 +236,7 @@ So,
 
 ## Fit linear mixed effects model to recreate Table 1
 
-Use either `lme` or `lme4` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
+Use the `lme` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
 
 ```{r}
 # code code code...
@@ -286,7 +256,7 @@ Instead of restricting data with `cum_cases >= 30`, try restricting it with `cas
 
 ## Re-fit linear mixed effects model to recreate Table 1
 
-Use either `lme` or `lme4` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
+Use the `lme` package to fit the linear mixed effects model with change in cases as the outcome as described in the paper and compare the parameter estimates to those in Table 1.
 
 ```{r}
 # code code code...
